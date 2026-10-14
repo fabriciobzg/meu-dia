@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b6e5f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Meu Dia">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Meu Dia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Schibsted+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: coluna única estreita, lista de tarefas pendentes em cima, feitas embaixo, barra de progresso no topo */
+:root {
+  color-scheme: light;
+  --bg: #f3f5f7;
+  --surface: #ffffff;
+  --fg: #14212b;
+  --muted: #6b7b88;
+  --line: #dde3e8;
+  --accent: #0b6e5f;
+  --accent-fg: #ffffff;
+  --accent-soft: #d8efe9;
+  --danger: #b3382c;
+  --font-display: "Bricolage Grotesque", "Arial Black", system-ui, sans-serif;
+  --font-body: "Schibsted Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f171d;
+    --surface: #17222a;
+    --fg: #e7eef3;
+    --muted: #8fa1ae;
+    --line: #263540;
+    --accent: #3fc0a8;
+    --accent-fg: #07211c;
+    --accent-soft: #14352f;
+    --danger: #ef8478;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f171d;
+  --surface: #17222a;
+  --fg: #e7eef3;
+  --muted: #8fa1ae;
+  --line: #263540;
+  --accent: #3fc0a8;
+  --accent-fg: #07211c;
+  --accent-soft: #14352f;
+  --danger: #ef8478;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.45;
+  padding-inline: 16px;
+  padding-block: 28px 64px;
+}
+main { max-width: 560px; margin-inline: auto; display: flex; flex-direction: column; gap: 24px; }
+header { display: flex; flex-direction: column; gap: 6px; }
+.date { font-family: var(--font-mono); font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(2.4rem, 9vw, 3.4rem); line-height: 1; margin: 0; letter-spacing: -.02em; text-wrap: balance; }
+.progress { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.progress-top { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; color: var(--muted); }
+.progress-top strong { color: var(--fg); font-family: var(--font-mono); font-weight: 500; font-variant-numeric: tabular-nums; }
+.bar { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .25s ease; }
+h2 { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+li { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 10px 10px 14px; }
+li.done .txt { color: var(--muted); text-decoration: line-through; }
+li.done { background: transparent; }
+input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; flex: none;
+  width: 26px; height: 26px; margin: 0; border: 2px solid var(--muted); border-radius: 8px;
+  background: var(--surface); cursor: pointer; display: grid; place-content: center;
+}
+input[type="checkbox"]::after { content: ""; width: 12px; height: 7px; border-left: 3px solid var(--accent-fg); border-bottom: 3px solid var(--accent-fg); transform: rotate(-45deg) translate(1px, -1px); opacity: 0; }
+input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+input[type="checkbox"]:checked::after { opacity: 1; }
+.txt, .time, .new-txt, .new-time {
+  font: inherit; color: var(--fg); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 6px 8px; min-width: 0;
+}
+.txt { flex: 1; }
+.time { flex: none; width: 5.6em; font-family: var(--font-mono); font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.txt:hover, .time:hover { border-color: var(--line); }
+.txt:focus, .time:focus, .new-txt:focus, .new-time:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; background: var(--surface); }
+input[type="checkbox"]:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.del { flex: none; width: 34px; height: 34px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
+.del:hover { color: var(--danger); background: var(--accent-soft); }
+form { display: flex; flex-wrap: wrap; gap: 8px; }
+.new-txt { flex: 1 1 200px; border-color: var(--line); background: var(--surface); padding: 12px 14px; border-radius: 12px; }
+.new-time { flex: none; border-color: var(--line); background: var(--surface); padding: 12px 10px; border-radius: 12px; font-family: var(--font-mono); font-size: 14px; }
+.add { flex: none; border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-fg); font: inherit; font-weight: 600; padding: 12px 20px; cursor: pointer; }
+.add:hover { filter: brightness(1.08); }
+#bulk-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.bulk { flex: 1 1 100%; font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; resize: vertical; min-height: 84px; }
+.bulk:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+.empty { color: var(--muted); font-size: 14px; padding: 4px 2px; }
+.hint { color: var(--muted); font-size: 13px; }
+.msg { display: flex; flex-direction: column; gap: 6px; background: var(--accent-soft); border-radius: 14px; padding: 18px 20px; }
+.msg[hidden] { display: none; }
+.msg strong { font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; line-height: 1.1; letter-spacing: -.01em; text-wrap: balance; }
+.msg span { color: var(--fg); }
+@media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
+</style>
+</head>
+<body>
+
+<main>
+  <header>
+    <div class="date" id="date">Terça, 13 de outubro</div>
+    <h1>Meu dia</h1>
+    <div class="progress">
+      <div class="progress-top"><span>Feito hoje</span><strong id="count">0 de 0</strong></div>
+      <div class="bar" role="progressbar" aria-label="Progresso do dia" aria-valuemin="0" aria-valuemax="100" id="bar"><i id="fill"></i></div>
+    </div>
+  </header>
+
+  <section>
+    <h2>Jogar o dia</h2>
+    <form id="bulk-form">
+      <textarea class="bulk" id="bulk-text" rows="3" placeholder="Estudar - 12:00, Treinar - 14:00, Jantar - 20:00" aria-label="Texto do dia"></textarea>
+      <button class="add" type="submit">Gerar lista</button>
+    </form>
+    <p class="hint">Escreva a tarefa, um hífen e o horário: "Estudar - 12:00". Separe várias tarefas por vírgula ou por linha. A lista fica em ordem de horário.</p>
+  </section>
+
+  <section>
+    <h2>Falta fazer</h2>
+    <ul id="pending"></ul>
+  </section>
+
+  <section>
+    <h2>Já feito</h2>
+    <ul id="done"></ul>
+  </section>
+
+  <section>
+    <h2>Adicionar</h2>
+    <form id="add-form">
+      <input class="new-txt" id="new-text" type="text" placeholder="Ex.: Ler - 16:00" autocomplete="off" aria-label="Nova tarefa">
+      <input class="new-time" id="new-time" type="time" aria-label="Horário (opcional)">
+      <button class="add" type="submit">Adicionar</button>
+    </form>
+    <p class="hint">Clique no texto ou no horário para editar. O × apaga a tarefa.</p>
+  </section>
+  <section class="msg" id="msg" aria-live="polite" hidden>
+    <strong id="msg-title"></strong>
+    <span id="msg-body"></span>
+  </section>
+</main>
+
+<script>
+(function () {
+  var now = new Date();
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  var today = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
+  var KEY = "meu-dia-" + today;
+  var MSGS = [
+    ["Você pode mais", "Ainda tem muito dia pela frente. Escolha a próxima tarefa e comece por ela."],
+    ["Bom começo", "O dia está andando e já tem coisa feita. Mantenha o ritmo que ele engrena."],
+    ["Parabéns, passou da metade", "Faltou pouco para fechar o dia. Mais algumas tarefas e está feito."],
+    ["Orgulho do seu dia", "Que dedicação! Foco e constância do início ao fim, aproveite esse resultado."]
+  ];
+  try {
+    var label = now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+    document.getElementById("date").textContent = label.charAt(0).toUpperCase() + label.slice(1);
+  } catch (e) {}
+
+  // Formato principal: "Tarefa - 12:00". O que vem depois do hífen, no fim da linha, é o horário.
+  var DASH_RE = /\s+[-–—]\s*(\d{1,2})(?:\s*[:h]\s*(\d{2})?)?\s*$/i;
+  // Reserva para quando não há hífen: "às 14", "14h", "14:30".
+  var LOOSE_RE = /(?:(?:^|\s)[àa]s?\s+(\d{1,2})(?:\s*(?:[:h]\s*(\d{2})?|horas?))?(?![\d])|\b(\d{1,2})\s*(?:[:h]\s*(\d{2})?|horas?)(?![\d\wà-ú]))/i;
+
+  function toTime(h, m) {
+    h = parseInt(h, 10); m = parseInt(m || "0", 10);
+    return (h <= 23 && m <= 59) ? pad(h) + ":" + pad(m) : "";
+  }
+  function parseLine(raw) {
+    var s = raw.trim();
+    if (!s) return null;
+    var time = "";
+    var m = DASH_RE.exec(s);
+    if (m) {
+      time = toTime(m[1], m[2]);
+      if (time) s = s.slice(0, m.index);
+    }
+    if (!time) {
+      m = LOOSE_RE.exec(s);
+      if (m) {
+        time = toTime(m[1] || m[3], m[2] || m[4]);
+        if (time) s = s.slice(0, m.index) + " " + s.slice(m.index + m[0].length);
+      }
+    }
+    s = s.replace(/^(eu\s+)?(quero|vou|preciso)\s+/i, "")
+         .replace(/\s+/g, " ").replace(/^[\s,;.\-–]+|[\s,;.\-–]+$/g, "")
+         .replace(/\s+(e|às|as|a|de|para)$/i, "");
+    if (!s) return null;
+    return { time: time, text: s.charAt(0).toUpperCase() + s.slice(1) };
+  }
+  document.getElementById("bulk-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var box = document.getElementById("bulk-text");
+    var parts = box.value.split(/[\n;,]+/);
+    var added = false;
+    parts.forEach(function (p) {
+      var r = parseLine(p);
+      if (r) { items.push({ id: nextId(), time: r.time, text: r.text, done: false }); added = true; }
+    });
+    if (added) { box.value = ""; save(); render(); } else { box.focus(); }
+  });
+
+  var seed = [];
+  var items = load();
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (raw) { var p = JSON.parse(raw); if (Array.isArray(p)) return p; }
+    } catch (e) {}
+    return seed.map(function (i) { return Object.assign({}, i); });
+  }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(items)); } catch (e) {} }
+  function nextId() { return items.reduce(function (m, i) { return Math.max(m, i.id); }, 0) + 1; }
+
+  // Ordena por horário. Quem não tem horário fica no fim, na ordem em que foi adicionado.
+  function byTime(list) {
+    return list.slice().sort(function (a, b) {
+      var ta = a.time || "99:99", tb = b.time || "99:99";
+      if (ta !== tb) return ta < tb ? -1 : 1;
+      return a.id - b.id;
+    });
+  }
+
+  function row(item) {
+    var li = document.createElement("li");
+    if (item.done) li.className = "done";
+
+    var cb = document.createElement("input");
+    cb.type = "checkbox"; cb.checked = item.done;
+    cb.setAttribute("aria-label", "Concluir: " + item.text);
+    cb.addEventListener("change", function () { item.done = cb.checked; save(); render(); });
+
+    var txt = document.createElement("input");
+    txt.type = "text"; txt.className = "txt"; txt.value = item.text;
+    txt.setAttribute("aria-label", "Texto da tarefa");
+    txt.addEventListener("input", function () { item.text = txt.value; save(); });
+
+    var time = document.createElement("input");
+    time.type = "time"; time.className = "time"; time.value = item.time || "";
+    time.setAttribute("aria-label", "Horário");
+    time.addEventListener("change", function () { item.time = time.value; save(); render(); });
+
+    var del = document.createElement("button");
+    del.type = "button"; del.className = "del"; del.textContent = "×";
+    del.setAttribute("aria-label", "Apagar tarefa");
+    del.addEventListener("click", function () {
+      items = items.filter(function (i) { return i.id !== item.id; });
+      save(); render();
+    });
+
+    li.appendChild(cb); li.appendChild(txt); li.appendChild(time); li.appendChild(del);
+    return li;
+  }
+
+  function fill(listId, list, emptyMsg) {
+    var ul = document.getElementById(listId);
+    ul.textContent = "";
+    if (!list.length) {
+      var p = document.createElement("li");
+      p.className = "empty"; p.style.border = "0"; p.style.background = "transparent"; p.style.padding = "4px 2px";
+      p.textContent = emptyMsg;
+      ul.appendChild(p);
+      return;
+    }
+    list.forEach(function (i) { ul.appendChild(row(i)); });
+  }
+
+  function render() {
+    var pend = byTime(items.filter(function (i) { return !i.done; }));
+    var done = byTime(items.filter(function (i) { return i.done; }));
+    fill("pending", pend, "Tudo certo por hoje.");
+    fill("done", done, "Nada marcado ainda.");
+    var total = items.length, n = done.length;
+    document.getElementById("count").textContent = n + " de " + total;
+    var pct = total ? Math.round((n / total) * 100) : 0;
+    document.getElementById("fill").style.width = pct + "%";
+    document.getElementById("bar").setAttribute("aria-valuenow", String(pct));
+    var msg = document.getElementById("msg");
+    if (!total) {
+      msg.hidden = true;
+    } else {
+      var share = (n / total) * 100;
+      var tier = share >= 75 ? 3 : share >= 50 ? 2 : share >= 25 ? 1 : 0;
+      document.getElementById("msg-title").textContent = MSGS[tier][0];
+      document.getElementById("msg-body").textContent = MSGS[tier][1];
+      msg.hidden = false;
+    }
+  }
+
+  document.getElementById("add-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var t = document.getElementById("new-text");
+    var h = document.getElementById("new-time");
+    var text = t.value.trim();
+    var time = h.value || "";
+    if (!time) { var r = parseLine(text); if (r) { text = r.text; time = r.time; } }
+    if (!text) { t.focus(); return; }
+    items.push({ id: nextId(), time: time, text: text, done: false });
+    t.value = ""; h.value = "";
+    save(); render(); t.focus();
+  });
+
+  render();
+})();
+</script>
+
+<script>
+if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
+  navigator.serviceWorker.register("sw.js").catch(function () {});
+}
+</script>
+</body>
+</html>
