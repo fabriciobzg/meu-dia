@@ -110,6 +110,21 @@ form { display: flex; flex-wrap: wrap; gap: 8px; }
 .bulk:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
 .empty { color: var(--muted); font-size: 14px; padding: 4px 2px; }
 .hint { color: var(--muted); font-size: 13px; }
+.trash { border-top: 1px solid var(--line); padding-top: 14px; }
+.trash[hidden] { display: none; }
+.trash summary { cursor: pointer; display: flex; align-items: center; gap: 8px; list-style: none; font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.trash summary::-webkit-details-marker { display: none; }
+.trash summary::before { content: "\25B8"; display: inline-block; transition: transform .15s ease; }
+.trash[open] summary::before { transform: rotate(90deg); }
+.trash summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+#trash-count { font-family: var(--font-mono); font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--fg); background: var(--accent-soft); border-radius: 99px; padding: 1px 8px; }
+.trash ul { margin-top: 12px; }
+li.gone { background: transparent; }
+.gone-txt { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--danger); text-decoration: line-through; text-decoration-thickness: 2px; }
+.gone-time { flex: none; font-family: var(--font-mono); font-size: 15px; color: var(--danger); text-decoration: line-through; font-variant-numeric: tabular-nums; }
+.restore { flex: none; font: inherit; font-size: 14px; font-weight: 600; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+.restore:hover { border-color: var(--accent); color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .trash summary::before { transition: none; } }
 .msg { display: flex; flex-direction: column; gap: 6px; background: var(--accent-soft); border-radius: 14px; padding: 18px 20px; }
 .msg[hidden] { display: none; }
 .msg strong { font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; line-height: 1.1; letter-spacing: -.01em; text-wrap: balance; }
@@ -155,8 +170,12 @@ form { display: flex; flex-wrap: wrap; gap: 8px; }
       <input class="new-time" id="new-time" type="time" aria-label="Horário (opcional)">
       <button class="add" type="submit">Adicionar</button>
     </form>
-    <p class="hint">Clique no texto ou no horário para editar. O × apaga a tarefa.</p>
+    <p class="hint">Clique no texto ou no horário para editar. O × exclui a tarefa, e dá para restaurar em Tarefas excluídas.</p>
   </section>
+  <details class="trash" id="trash" hidden>
+    <summary>Tarefas excluídas <span id="trash-count">0</span></summary>
+    <ul id="deleted"></ul>
+  </details>
   <section class="msg" id="msg" aria-live="polite" hidden>
     <strong id="msg-title"></strong>
     <span id="msg-body"></span>
@@ -266,13 +285,28 @@ form { display: flex; flex-wrap: wrap; gap: 8px; }
 
     var del = document.createElement("button");
     del.type = "button"; del.className = "del"; del.textContent = "×";
-    del.setAttribute("aria-label", "Apagar tarefa");
+    del.setAttribute("aria-label", "Excluir tarefa");
     del.addEventListener("click", function () {
-      items = items.filter(function (i) { return i.id !== item.id; });
+      item.deleted = true;
       save(); render();
     });
 
     li.appendChild(cb); li.appendChild(txt); li.appendChild(time); li.appendChild(del);
+    return li;
+  }
+
+  function goneRow(item) {
+    var li = document.createElement("li");
+    li.className = "gone";
+    var txt = document.createElement("span");
+    txt.className = "gone-txt"; txt.textContent = item.text;
+    var time = document.createElement("span");
+    time.className = "gone-time"; time.textContent = item.time || "";
+    var btn = document.createElement("button");
+    btn.type = "button"; btn.className = "restore"; btn.textContent = "Restaurar";
+    btn.setAttribute("aria-label", "Restaurar: " + item.text);
+    btn.addEventListener("click", function () { item.deleted = false; save(); render(); });
+    li.appendChild(txt); li.appendChild(time); li.appendChild(btn);
     return li;
   }
 
@@ -290,11 +324,18 @@ form { display: flex; flex-wrap: wrap; gap: 8px; }
   }
 
   function render() {
-    var pend = byTime(items.filter(function (i) { return !i.done; }));
-    var done = byTime(items.filter(function (i) { return i.done; }));
+    var active = items.filter(function (i) { return !i.deleted; });
+    var pend = byTime(active.filter(function (i) { return !i.done; }));
+    var done = byTime(active.filter(function (i) { return i.done; }));
     fill("pending", pend, "Tudo certo por hoje.");
     fill("done", done, "Nada marcado ainda.");
-    var total = items.length, n = done.length;
+    var gone = byTime(items.filter(function (i) { return i.deleted; }));
+    var gul = document.getElementById("deleted");
+    gul.textContent = "";
+    gone.forEach(function (i) { gul.appendChild(goneRow(i)); });
+    document.getElementById("trash-count").textContent = String(gone.length);
+    document.getElementById("trash").hidden = gone.length === 0;
+    var total = active.length, n = done.length;
     document.getElementById("count").textContent = n + " de " + total;
     var pct = total ? Math.round((n / total) * 100) : 0;
     document.getElementById("fill").style.width = pct + "%";
