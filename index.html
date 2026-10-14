@@ -125,6 +125,24 @@ li.gone { background: transparent; }
 .restore { flex: none; font: inherit; font-size: 14px; font-weight: 600; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; cursor: pointer; }
 .restore:hover { border-color: var(--accent); color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .trash summary::before { transition: none; } }
+.title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.nav { display: flex; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.nav button { font: inherit; font-size: 15px; font-weight: 600; color: var(--fg); background: transparent; border: 0; min-width: 44px; height: 44px; padding: 0 12px; cursor: pointer; }
+.nav button + button { border-left: 1px solid var(--line); }
+.nav button.arrow { font-size: 24px; line-height: 1; }
+.nav button:hover:not(:disabled) { background: var(--accent-soft); }
+.nav button:disabled { color: var(--muted); cursor: default; }
+.week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+.day { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; padding: 8px 0 7px; font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+.day:hover { border-color: var(--accent); }
+.day-name { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.day-num { font-family: var(--font-mono); font-size: 17px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.day-bar { display: block; width: 70%; height: 4px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.day-bar i { display: block; height: 100%; background: var(--accent); }
+.day-count { font-family: var(--font-mono); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.day.today .day-name { color: var(--accent); }
+.day.sel { background: var(--accent-soft); border: 2px solid var(--accent); padding: 7px 0 6px; }
+.day.sel .day-bar { background: var(--surface); }
 .msg { display: flex; flex-direction: column; gap: 6px; background: var(--accent-soft); border-radius: 14px; padding: 18px 20px; }
 .msg[hidden] { display: none; }
 .msg strong { font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; line-height: 1.1; letter-spacing: -.01em; text-wrap: balance; }
@@ -136,10 +154,18 @@ li.gone { background: transparent; }
 
 <main>
   <header>
-    <div class="date" id="date">Terça, 13 de outubro</div>
-    <h1>Meu dia</h1>
+    <div class="date" id="date"></div>
+    <div class="title-row">
+      <h1>Meu dia</h1>
+      <div class="nav" role="group" aria-label="Navegar entre dias">
+        <button type="button" id="prev" class="arrow" aria-label="Dia anterior">&#8249;</button>
+        <button type="button" id="today-btn">Hoje</button>
+        <button type="button" id="next" class="arrow" aria-label="Próximo dia">&#8250;</button>
+      </div>
+    </div>
+    <nav class="week" id="week" aria-label="Semana"></nav>
     <div class="progress">
-      <div class="progress-top"><span>Feito hoje</span><strong id="count">0 de 0</strong></div>
+      <div class="progress-top"><span id="count-label">Feito hoje</span><strong id="count">0 de 0</strong></div>
       <div class="bar" role="progressbar" aria-label="Progresso do dia" aria-valuemin="0" aria-valuemax="100" id="bar"><i id="fill"></i></div>
     </div>
   </header>
@@ -150,7 +176,7 @@ li.gone { background: transparent; }
       <textarea class="bulk" id="bulk-text" rows="3" placeholder="Estudar - 12:00, Treinar - 14:00, Jantar - 20:00" aria-label="Texto do dia"></textarea>
       <button class="add" type="submit">Gerar lista</button>
     </form>
-    <p class="hint">Escreva a tarefa, um hífen e o horário: "Estudar - 12:00". Separe várias tarefas por vírgula ou por linha. A lista fica em ordem de horário.</p>
+    <p class="hint">Escreva a tarefa, um hífen e o horário: "Estudar - 12:00". Separe várias tarefas por vírgula ou por linha. A lista fica em ordem de horário. As tarefas entram no dia que está aberto lá em cima.</p>
   </section>
 
   <section>
@@ -184,20 +210,48 @@ li.gone { background: transparent; }
 
 <script>
 (function () {
-  var now = new Date();
-  function pad(n) { return (n < 10 ? "0" : "") + n; }
-  var today = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
-  var KEY = "meu-dia-" + today;
+  var PREFIX = "meu-dia-";
+  var DOW = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
   var MSGS = [
     ["Você pode mais", "Ainda tem muito dia pela frente. Escolha a próxima tarefa e comece por ela."],
     ["Bom começo", "O dia está andando e já tem coisa feita. Mantenha o ritmo que ele engrena."],
     ["Parabéns, passou da metade", "Faltou pouco para fechar o dia. Mais algumas tarefas e está feito."],
     ["Orgulho do seu dia", "Que dedicação! Foco e constância do início ao fim, aproveite esse resultado."]
   ];
-  try {
-    var label = now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
-    document.getElementById("date").textContent = label.charAt(0).toUpperCase() + label.slice(1);
-  } catch (e) {}
+
+  // Datas sempre no formato AAAA-MM-DD, no fuso do aparelho.
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function fmt(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function parse(s) { var p = s.split("-"); return new Date(+p[0], +p[1] - 1, +p[2], 12); }
+  function shift(s, days) { var d = parse(s); d.setDate(d.getDate() + days); return fmt(d); }
+
+  var todayStr = fmt(new Date());
+  var selected = todayStr;
+  var items = read(selected);
+
+  // Cada dia tem a sua lista guardada no aparelho, com a chave "meu-dia-AAAA-MM-DD".
+  function read(ds) {
+    try {
+      var raw = localStorage.getItem(PREFIX + ds);
+      if (raw) { var p = JSON.parse(raw); if (Array.isArray(p)) return p; }
+    } catch (e) {}
+    return [];
+  }
+  function save() { try { localStorage.setItem(PREFIX + selected, JSON.stringify(items)); } catch (e) {} }
+  function nextId() { return items.reduce(function (m, i) { return Math.max(m, i.id); }, 0) + 1; }
+
+  function label(ds) {
+    try {
+      var t = parse(ds).toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+      return t.charAt(0).toUpperCase() + t.slice(1);
+    } catch (e) { return ds; }
+  }
+  function rel(ds) {
+    if (ds === todayStr) return "Hoje";
+    if (ds === shift(todayStr, 1)) return "Amanhã";
+    if (ds === shift(todayStr, -1)) return "Ontem";
+    return "";
+  }
 
   // Formato principal: "Tarefa - 12:00". O que vem depois do hífen, no fim da linha, é o horário.
   var DASH_RE = /\s+[-–—]\s*(\d{1,2})(?:\s*[:h]\s*(\d{2})?)?\s*$/i;
@@ -230,30 +284,6 @@ li.gone { background: transparent; }
     if (!s) return null;
     return { time: time, text: s.charAt(0).toUpperCase() + s.slice(1) };
   }
-  document.getElementById("bulk-form").addEventListener("submit", function (e) {
-    e.preventDefault();
-    var box = document.getElementById("bulk-text");
-    var parts = box.value.split(/[\n;,]+/);
-    var added = false;
-    parts.forEach(function (p) {
-      var r = parseLine(p);
-      if (r) { items.push({ id: nextId(), time: r.time, text: r.text, done: false }); added = true; }
-    });
-    if (added) { box.value = ""; save(); render(); } else { box.focus(); }
-  });
-
-  var seed = [];
-  var items = load();
-
-  function load() {
-    try {
-      var raw = localStorage.getItem(KEY);
-      if (raw) { var p = JSON.parse(raw); if (Array.isArray(p)) return p; }
-    } catch (e) {}
-    return seed.map(function (i) { return Object.assign({}, i); });
-  }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(items)); } catch (e) {} }
-  function nextId() { return items.reduce(function (m, i) { return Math.max(m, i.id); }, 0) + 1; }
 
   // Ordena por horário. Quem não tem horário fica no fim, na ordem em que foi adicionado.
   function byTime(list) {
@@ -323,11 +353,57 @@ li.gone { background: transparent; }
     list.forEach(function (i) { ul.appendChild(row(i)); });
   }
 
+  // Resumo de um dia para a faixa da semana (o dia aberto usa a lista que está na tela).
+  function summary(ds) {
+    var list = ds === selected ? items : read(ds);
+    var a = list.filter(function (i) { return !i.deleted; });
+    return { total: a.length, done: a.filter(function (i) { return i.done; }).length };
+  }
+
+  function dayButton(ds) {
+    var sm = summary(ds), d = parse(ds);
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "day";
+    if (ds === selected) { b.className += " sel"; b.setAttribute("aria-current", "date"); }
+    if (ds === todayStr) b.className += " today";
+    var name = document.createElement("span");
+    name.className = "day-name"; name.textContent = DOW[d.getDay()];
+    var num = document.createElement("span");
+    num.className = "day-num"; num.textContent = String(d.getDate());
+    var bar = document.createElement("span");
+    bar.className = "day-bar";
+    var f = document.createElement("i");
+    f.style.width = (sm.total ? Math.round((sm.done / sm.total) * 100) : 0) + "%";
+    bar.appendChild(f);
+    var cnt = document.createElement("span");
+    cnt.className = "day-count"; cnt.textContent = sm.total ? sm.done + "/" + sm.total : "·";
+    b.setAttribute("aria-label", DOW[d.getDay()] + " " + d.getDate() + ": " + (sm.total ? sm.done + " de " + sm.total + " feitas" : "sem tarefas"));
+    b.appendChild(name); b.appendChild(num); b.appendChild(bar); b.appendChild(cnt);
+    b.addEventListener("click", function () { select(ds); });
+    return b;
+  }
+
+  // A semana vai de segunda a domingo e acompanha o dia aberto.
+  function renderWeek() {
+    var strip = document.getElementById("week");
+    strip.textContent = "";
+    var start = shift(selected, -((parse(selected).getDay() + 6) % 7));
+    for (var k = 0; k < 7; k++) strip.appendChild(dayButton(shift(start, k)));
+  }
+
+  function select(ds) { selected = ds; items = read(ds); render(); }
+
   function render() {
+    var r = rel(selected);
+    document.getElementById("date").textContent = (r ? r + " · " : "") + label(selected);
+    document.getElementById("today-btn").disabled = selected === todayStr;
+    document.getElementById("count-label").textContent = selected === todayStr ? "Feito hoje" : "Feito neste dia";
+    renderWeek();
+
     var active = items.filter(function (i) { return !i.deleted; });
     var pend = byTime(active.filter(function (i) { return !i.done; }));
     var done = byTime(active.filter(function (i) { return i.done; }));
-    fill("pending", pend, "Tudo certo por hoje.");
+    fill("pending", pend, done.length ? "Tudo certo por aqui." : "Nenhuma tarefa neste dia.");
     fill("done", done, "Nada marcado ainda.");
     var gone = byTime(items.filter(function (i) { return i.deleted; }));
     var gul = document.getElementById("deleted");
@@ -341,7 +417,7 @@ li.gone { background: transparent; }
     document.getElementById("fill").style.width = pct + "%";
     document.getElementById("bar").setAttribute("aria-valuenow", String(pct));
     var msg = document.getElementById("msg");
-    if (!total) {
+    if (!total || selected > todayStr) {
       msg.hidden = true;
     } else {
       var share = (n / total) * 100;
@@ -351,6 +427,22 @@ li.gone { background: transparent; }
       msg.hidden = false;
     }
   }
+
+  document.getElementById("prev").addEventListener("click", function () { select(shift(selected, -1)); });
+  document.getElementById("next").addEventListener("click", function () { select(shift(selected, 1)); });
+  document.getElementById("today-btn").addEventListener("click", function () { select(todayStr); });
+
+  document.getElementById("bulk-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var box = document.getElementById("bulk-text");
+    var parts = box.value.split(/[\n;,]+/);
+    var added = false;
+    parts.forEach(function (p) {
+      var r = parseLine(p);
+      if (r) { items.push({ id: nextId(), time: r.time, text: r.text, done: false }); added = true; }
+    });
+    if (added) { box.value = ""; save(); render(); } else { box.focus(); }
+  });
 
   document.getElementById("add-form").addEventListener("submit", function (e) {
     e.preventDefault();
@@ -363,6 +455,16 @@ li.gone { background: transparent; }
     items.push({ id: nextId(), time: time, text: text, done: false });
     t.value = ""; h.value = "";
     save(); render(); t.focus();
+  });
+
+  // Se o app ficou aberto de um dia para o outro, volta a mostrar o dia certo.
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) return;
+    var t = fmt(new Date());
+    if (t === todayStr) return;
+    var wasToday = selected === todayStr;
+    todayStr = t;
+    if (wasToday) select(t); else render();
   });
 
   render();
