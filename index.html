@@ -108,7 +108,19 @@ form { display: flex; flex-wrap: wrap; gap: 8px; }
 .new-time { flex: none; border-color: var(--line); background: var(--surface); padding: 12px 10px; border-radius: 12px; font-family: var(--font-mono); font-size: 16px; }
 .add { flex: none; border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-fg); font: inherit; font-weight: 600; padding: 12px 20px; cursor: pointer; }
 .add:hover { filter: brightness(1.08); }
-#bulk-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+#bulk-form, #jarvis-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+#jarvis-out:not(:empty) { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.status { font-size: 14px; color: var(--fg); }
+.status.err { color: var(--danger); }
+.prop { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.prop li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px 10px; align-items: center; padding: 12px; }
+.prop .meta { grid-column: 2; display: flex; flex-wrap: wrap; gap: 8px; }
+.prop .meta input { font: inherit; font-family: var(--font-mono); font-size: 15px; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; min-width: 0; }
+.prop .note { grid-column: 2; font-size: 13px; color: var(--muted); }
+.prop-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ghost { font: inherit; font-weight: 600; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 12px; padding: 12px 18px; cursor: pointer; }
+.ghost:hover { border-color: var(--accent); }
+.add:disabled { opacity: .6; cursor: default; }
 .bulk { flex: 1 1 100%; font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; resize: vertical; min-height: 84px; }
 .bulk:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
 .empty { color: var(--muted); font-size: 14px; padding: 4px 2px; }
@@ -179,6 +191,16 @@ select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       <div class="bar" role="progressbar" aria-label="Progresso do dia" aria-valuemin="0" aria-valuemax="100" id="bar"><i id="fill"></i></div>
     </div>
   </header>
+
+  <section id="jarvis" hidden>
+    <h2>Jarvis</h2>
+    <form id="jarvis-form">
+      <textarea class="bulk" id="jarvis-text" rows="2" maxlength="600" placeholder="Ex.: futebol sexta às dez, dentista quinta de manhã" aria-label="Texto para o Jarvis"></textarea>
+      <button class="add" type="submit" id="jarvis-btn">Organizar</button>
+    </form>
+    <div id="jarvis-out" aria-live="polite"></div>
+    <p class="hint">A IA entende o texto, escolhe o dia e o horário e mostra tudo antes de adicionar. O texto é enviado ao Google (plano gratuito), então não escreva nada pessoal ou sensível.</p>
+  </section>
 
   <section>
     <h2>Jogar o dia</h2>
@@ -490,6 +512,129 @@ select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   document.getElementById("prev").addEventListener("click", function () { select(shift(selected, -1)); });
   document.getElementById("next").addEventListener("click", function () { select(shift(selected, 1)); });
   document.getElementById("today-btn").addEventListener("click", function () { select(todayStr); });
+
+  // ---------- Jarvis ----------
+  // Cole entre as aspas o endereço do seu Worker do Cloudflare (termina em .workers.dev).
+  // Enquanto estiver vazio, a caixa do Jarvis fica escondida.
+  var JARVIS_URL = "https://jarvis.fabriciobiagig.workers.dev";
+
+  function addToDay(ds, it) {
+    var list = ds === selected ? items : read(ds);
+    var id = list.reduce(function (m, i) { return Math.max(m, i.id); }, 0) + 1;
+    list.push({ id: id, time: it.time, text: it.text, done: false });
+    if (ds === selected) save();
+    else { try { localStorage.setItem(PREFIX + ds, JSON.stringify(list)); } catch (e) {} }
+  }
+
+  function jarvisDays() {
+    var out = [];
+    for (var k = 0; k < 21; k++) {
+      var ds = shift(todayStr, k);
+      var w = parse(ds).toLocaleDateString("pt-BR", { weekday: "long" });
+      out.push({ date: ds, label: w });
+    }
+    return out;
+  }
+
+  function jarvisStatus(msg, isErr) {
+    var out = document.getElementById("jarvis-out");
+    out.textContent = "";
+    if (!msg) return;
+    var p = document.createElement("div");
+    p.className = "status" + (isErr ? " err" : "");
+    p.textContent = msg;
+    out.appendChild(p);
+  }
+
+  function jarvisPreview(tasks) {
+    var out = document.getElementById("jarvis-out");
+    out.textContent = "";
+    var ul = document.createElement("ul");
+    ul.className = "prop";
+    var rows = [];
+    tasks.forEach(function (t) {
+      var li = document.createElement("li");
+      var cb = document.createElement("input");
+      cb.type = "checkbox"; cb.checked = true; cb.setAttribute("aria-label", "Adicionar: " + t.text);
+      var txt = document.createElement("input");
+      txt.type = "text"; txt.className = "txt"; txt.value = t.text; txt.setAttribute("aria-label", "Texto da tarefa");
+      var meta = document.createElement("div");
+      meta.className = "meta";
+      var dt = document.createElement("input");
+      dt.type = "date"; dt.value = t.date || selected; dt.setAttribute("aria-label", "Dia");
+      var tm = document.createElement("input");
+      tm.type = "time"; tm.value = t.time || ""; tm.setAttribute("aria-label", "Horário");
+      meta.appendChild(dt); meta.appendChild(tm);
+      li.appendChild(cb); li.appendChild(txt); li.appendChild(meta);
+      if (t.note) {
+        var n = document.createElement("div");
+        n.className = "note"; n.textContent = t.note;
+        li.appendChild(n);
+      }
+      ul.appendChild(li);
+      rows.push({ cb: cb, txt: txt, dt: dt, tm: tm });
+    });
+    var actions = document.createElement("div");
+    actions.className = "prop-actions";
+    var ok = document.createElement("button");
+    ok.type = "button"; ok.className = "add"; ok.textContent = "Adicionar";
+    var cancel = document.createElement("button");
+    cancel.type = "button"; cancel.className = "ghost"; cancel.textContent = "Cancelar";
+    cancel.addEventListener("click", function () { jarvisStatus(""); });
+    ok.addEventListener("click", function () {
+      var first = "", n = 0;
+      rows.forEach(function (r) {
+        var text = r.txt.value.trim();
+        if (!r.cb.checked || !text) return;
+        var ds = /^\d{4}-\d{2}-\d{2}$/.test(r.dt.value) ? r.dt.value : selected;
+        addToDay(ds, { text: text, time: r.tm.value || "" });
+        if (!first) first = ds;
+        n++;
+      });
+      if (!n) { jarvisStatus("Nenhuma tarefa marcada para adicionar."); return; }
+      document.getElementById("jarvis-text").value = "";
+      select(first);
+      jarvisStatus(n + (n === 1 ? " tarefa adicionada em " : " tarefas adicionadas. Aberto: ") + label(first) + ".");
+    });
+    actions.appendChild(ok); actions.appendChild(cancel);
+    out.appendChild(ul); out.appendChild(actions);
+  }
+
+  function jarvisAsk(text) {
+    var btn = document.getElementById("jarvis-btn");
+    btn.disabled = true; btn.textContent = "Organizando…";
+    jarvisStatus("");
+    var ctl = typeof AbortController === "function" ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, 25000);
+    // text/plain evita a verificação prévia do navegador; o Worker lê o JSON do mesmo jeito.
+    fetch(JARVIS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=UTF-8" },
+      body: JSON.stringify({ text: text, days: jarvisDays() }),
+      signal: ctl ? ctl.signal : undefined
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) { return { ok: res.ok, data: data }; });
+    }).then(function (r) {
+      if (!r.ok) { jarvisStatus(r.data.error || "Não consegui falar com o Jarvis agora.", true); return; }
+      if (!r.data.tasks || !r.data.tasks.length) { jarvisStatus("Não encontrei tarefas nesse texto. Tente escrever de outro jeito."); return; }
+      jarvisPreview(r.data.tasks);
+    }).catch(function () {
+      jarvisStatus("Não consegui falar com o Jarvis. Confira a internet e o endereço do Worker.", true);
+    }).then(function () {
+      clearTimeout(timer);
+      btn.disabled = false; btn.textContent = "Organizar";
+    });
+  }
+
+  if (JARVIS_URL) {
+    document.getElementById("jarvis").hidden = false;
+    document.getElementById("jarvis-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var text = document.getElementById("jarvis-text").value.trim();
+      if (!text) { document.getElementById("jarvis-text").focus(); return; }
+      jarvisAsk(text);
+    });
+  }
 
   document.getElementById("bulk-form").addEventListener("submit", function (e) {
     e.preventDefault();
