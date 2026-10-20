@@ -108,7 +108,7 @@ form { display: flex; flex-wrap: wrap; gap: 8px; }
 .new-time { flex: none; border-color: var(--line); background: var(--surface); padding: 12px 10px; border-radius: 12px; font-family: var(--font-mono); font-size: 16px; }
 .add { flex: none; border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-fg); font: inherit; font-weight: 600; padding: 12px 20px; cursor: pointer; }
 .add:hover { filter: brightness(1.08); }
-#bulk-form, #jarvis-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+#jarvis-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
 #jarvis-out:not(:empty) { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
 .status { font-size: 14px; color: var(--fg); }
 .status.err { color: var(--danger); }
@@ -122,6 +122,7 @@ form { display: flex; flex-wrap: wrap; gap: 8px; }
 .ghost:hover { border-color: var(--accent); }
 .add:disabled { opacity: .6; cursor: default; }
 .bulk { flex: 1 1 100%; font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; resize: vertical; min-height: 84px; }
+.ghost.rec, #mic-btn.rec, .ghost.rec:hover { color: #fff; background: #d0453d; border-color: #d0453d; }
 .bulk:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
 .empty { color: var(--muted); font-size: 14px; padding: 4px 2px; }
 .hint { color: var(--muted); font-size: 13px; }
@@ -192,23 +193,16 @@ select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     </div>
   </header>
 
-  <section id="jarvis" hidden>
+  <section id="jarvis">
     <h2>Jarvis</h2>
     <form id="jarvis-form">
-      <textarea class="bulk" id="jarvis-text" rows="2" maxlength="600" placeholder="Ex.: futebol sexta às dez, dentista quinta de manhã" aria-label="Texto para o Jarvis"></textarea>
+      <textarea class="bulk" id="jarvis-text" rows="3" maxlength="600" placeholder="Fale ou escreva: futebol sexta às dez, dentista quinta de manhã" aria-label="O que entra na sua agenda"></textarea>
       <button class="add" type="submit" id="jarvis-btn">Organizar</button>
+      <button class="ghost" type="button" id="mic-btn" hidden aria-pressed="false">&#127908; Falar</button>
+      <button class="ghost" type="button" id="local-btn">Sem IA</button>
     </form>
     <div id="jarvis-out" aria-live="polite"></div>
-    <p class="hint">A IA entende o texto, escolhe o dia e o horário e mostra tudo antes de adicionar. O texto é enviado ao Google (plano gratuito), então não escreva nada pessoal ou sensível.</p>
-  </section>
-
-  <section>
-    <h2>Jogar o dia</h2>
-    <form id="bulk-form">
-      <textarea class="bulk" id="bulk-text" rows="3" placeholder="Estudar - 12:00, Treinar - 14:00, Jantar - 20:00" aria-label="Texto do dia"></textarea>
-      <button class="add" type="submit">Gerar lista</button>
-    </form>
-    <p class="hint">Escreva a tarefa, um hífen e o horário: "Estudar - 12:00". Separe várias tarefas por vírgula ou por linha. A lista fica em ordem de horário. As tarefas entram no dia que está aberto lá em cima.</p>
+    <p class="hint" id="jarvis-hint">A IA escolhe o dia e o horário e mostra tudo antes de adicionar. O texto vai para o Google (plano gratuito): nada pessoal ou sensível. &ldquo;Sem IA&rdquo; usa o formato &ldquo;Estudar - 12:00&rdquo; e não envia nada.</p>
   </section>
 
   <section>
@@ -615,38 +609,107 @@ select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     }).then(function (res) {
       return res.json().catch(function () { return {}; }).then(function (data) { return { ok: res.ok, data: data }; });
     }).then(function (r) {
-      if (!r.ok) { jarvisStatus(r.data.error || "Não consegui falar com o Jarvis agora.", true); return; }
+      if (!r.ok) { jarvisStatus((r.data.error || "Não consegui falar com o Jarvis agora.") + " Você ainda pode usar o Sem IA.", true); return; }
       if (!r.data.tasks || !r.data.tasks.length) { jarvisStatus("Não encontrei tarefas nesse texto. Tente escrever de outro jeito."); return; }
       jarvisPreview(r.data.tasks);
     }).catch(function () {
-      jarvisStatus("Não consegui falar com o Jarvis. Confira a internet e o endereço do Worker.", true);
+      jarvisStatus("Não consegui falar com o Jarvis. Confira a internet. Você ainda pode usar o Sem IA.", true);
     }).then(function () {
       clearTimeout(timer);
       btn.disabled = false; btn.textContent = "Organizar";
     });
   }
 
-  if (JARVIS_URL) {
-    document.getElementById("jarvis").hidden = false;
-    document.getElementById("jarvis-form").addEventListener("submit", function (e) {
-      e.preventDefault();
-      var text = document.getElementById("jarvis-text").value.trim();
-      if (!text) { document.getElementById("jarvis-text").focus(); return; }
-      jarvisAsk(text);
+  // Sem IA: o formato "Tarefa - 12:00", separado por vírgula, ponto e vírgula ou linha.
+  function addLocal(text) {
+    var added = 0;
+    text.split(/[\n;,]+/).forEach(function (p) {
+      var r = parseLine(p);
+      if (r) { items.push({ id: nextId(), time: r.time, text: r.text, done: false }); added++; }
     });
+    if (added) { save(); render(); }
+    return added;
   }
 
-  document.getElementById("bulk-form").addEventListener("submit", function (e) {
-    e.preventDefault();
-    var box = document.getElementById("bulk-text");
-    var parts = box.value.split(/[\n;,]+/);
-    var added = false;
-    parts.forEach(function (p) {
-      var r = parseLine(p);
-      if (r) { items.push({ id: nextId(), time: r.time, text: r.text, done: false }); added = true; }
+  var jBox = document.getElementById("jarvis-text");
+  var jBtn = document.getElementById("jarvis-btn");
+  var micBtn = document.getElementById("mic-btn");
+  var localBtn = document.getElementById("local-btn");
+
+  function runLocal() {
+    var text = jBox.value.trim();
+    if (!text) { jBox.focus(); return; }
+    if (addLocal(text)) { jBox.value = ""; jarvisStatus(""); }
+    else jarvisStatus("Não entendi. Use o formato \"Estudar - 12:00\" ou toque em Organizar para a IA.", true);
+  }
+
+  if (JARVIS_URL) {
+    document.getElementById("jarvis-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var text = jBox.value.trim();
+      if (!text) { jBox.focus(); return; }
+      jarvisAsk(text);
     });
-    if (added) { box.value = ""; save(); render(); } else { box.focus(); }
-  });
+  } else {
+    // Sem endereço do Worker: só o modo sem IA.
+    jBtn.textContent = "Gerar lista";
+    localBtn.hidden = true;
+    document.getElementById("jarvis-hint").textContent = "Escreva a tarefa, um hífen e o horário: \"Estudar - 12:00\". Separe várias por vírgula ou por linha.";
+    document.getElementById("jarvis-form").addEventListener("submit", function (e) { e.preventDefault(); runLocal(); });
+  }
+  localBtn.addEventListener("click", runLocal);
+
+  // Voz: usa o reconhecimento de fala do navegador (pt-BR). Onde não existe, o botão some
+  // e dá para usar o microfone do teclado do celular.
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SR) {
+    micBtn.hidden = false;
+    var rec = null, listening = false, base = "", heard = false;
+    var setMic = function (on) {
+      listening = on;
+      micBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      micBtn.textContent = on ? "\u23F9 Parar" : "\uD83C\uDF99 Falar";
+      micBtn.classList.toggle("rec", on);
+    };
+    micBtn.addEventListener("click", function () {
+      if (listening && rec) { rec.stop(); return; }
+      try {
+        rec = new SR();
+        rec.lang = "pt-BR";
+        rec.interimResults = true;
+        rec.continuous = false;
+        base = jBox.value.trim();
+        heard = false;
+        rec.onresult = function (ev) {
+          var t = "";
+          for (var i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript;
+          heard = true;
+          jBox.value = (base ? base + " " : "") + t.trim();
+        };
+        rec.onerror = function (ev) {
+          var code = ev && ev.error;
+          if (code === "not-allowed" || code === "service-not-allowed") {
+            jarvisStatus("O microfone foi bloqueado. Permita o microfone para este site, ou use o microfone do teclado do celular.", true);
+          } else if (code === "no-speech") {
+            jarvisStatus("Não ouvi nada. Toque em Falar e tente de novo.");
+          } else if (code !== "aborted") {
+            jarvisStatus("A voz não funcionou aqui. Use o microfone do teclado do celular.", true);
+          }
+        };
+        rec.onend = function () {
+          setMic(false);
+          // Terminou de falar: manda para a IA (a prévia ainda deixa corrigir antes de adicionar).
+          if (heard && JARVIS_URL && jBox.value.trim()) jarvisAsk(jBox.value.trim());
+        };
+        jarvisStatus("");
+        rec.start();
+        setMic(true);
+      } catch (e) {
+        setMic(false);
+        jarvisStatus("A voz não funcionou aqui. Use o microfone do teclado do celular.", true);
+      }
+    });
+  }
 
   document.getElementById("add-form").addEventListener("submit", function (e) {
     e.preventDefault();
